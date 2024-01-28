@@ -4,4 +4,6 @@ set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 
 add_subdirectory(src/tcp)
-
+add_executable(main main.cpp)
+target_link_libraries(main PRIVATE tcp_server)
+ 

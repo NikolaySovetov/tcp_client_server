@@ -1,3 +1,4 @@
+#include "server.hpp"
 #include <iostream>
 #include <sys/types.h>
 #include <sys/socket.h>
@@ -6,87 +7,153 @@
 #include <arpa/inet.h>
 #include <string.h>
 #include <string>
+#include <list>
+#include <thread>
+#include <mutex>
 
-int main(int argc, char* argv[]) {
+namespace tcp
+{
+    void server::accept_connection()
+    {
+        // Accept a call
+        while (true)
+        {
+            struct sockaddr_in client;
+            socklen_t clientSize;
+            int client_socket = accept(endpoint, reinterpret_cast<sockaddr *>(&client), &clientSize);
 
-    // Create an endpoint for communication (socket)
-    int listening = socket(AF_INET, SOCK_STREAM, 0);
-    if (listening == -1) {
-        std::cerr << "Can't create a socket\n";
-        return EXIT_FAILURE;
+            if (client_socket > 0)
+            {
+                std::thread th(&server::concrete_connection, this, client_socket);
+                th.detach();
+                connection_count += 1;
+            }
+        }
     }
 
-    // Bind the socket to a IP / port
-    std::string str_port = "3000"; //argv[1];
-    uint16_t port = std::stoi(str_port);
+    void server::concrete_connection(int client_socket)
+    {
+        // While receiving - display message
+        char buffer[buffer_size];
+       
+        while (true)
+        {
+            // Clear buffer
+            memset(buffer, 0, buffer_size);
+       
+            // Wait for a message
+            ssize_t bytesRecv = recv(client_socket, buffer, 4096, 0);
 
-    sockaddr_in hint;
-    hint.sin_family = AF_INET;
-    hint.sin_port = htons(port);
-    inet_pton(AF_INET, "0.0.0.0", &hint.sin_addr);
+            if (bytesRecv == -1)
+            {
+                std::cerr << "The client disconnected\n";
+                break;
+            }
 
-    if (bind(listening, reinterpret_cast<sockaddr*>(&hint), sizeof(hint)) == -1) {
-        std::cerr << "Can't bind to IP/port\n";
-        return EXIT_FAILURE;
+            if (bytesRecv > 0)
+            {
+                // Display the message
+                std::cout << "Received: " << buffer << std::endl;
+
+                // Send echo to client
+                send(client_socket, buffer, bytesRecv + 1, 0);
+       
+                log_message(buffer);
+            }
+        }
+        connection_count -= 1;
     }
 
-    // Mark the socket for listening in
-    if (listen(listening, SOMAXCONN) == -1) {
-        std::cerr << "Can't listen\n";
-        return EXIT_FAILURE;
-    }
+    std::mutex log_mutex;
 
-    // Accept a call
-    sockaddr_in client;
-    socklen_t clientSize;
-    char host[NI_MAXHOST];
-    char svc[NI_MAXSERV];
+    void server::log_message(const std::string& client_message)
+    {
+        log_mutex.lock();
 
-    int clientSocket = accept(listening, reinterpret_cast<sockaddr*>(&client), &clientSize);
-    if (clientSocket == -1) {
-        std::cerr << "Problem with client connection\n";
-        return EXIT_FAILURE;
-    }
-
-    // Close the listening socket
-    close(listening);
-
-    memset(host, 0, NI_MAXHOST);
-    memset(svc, 0, NI_MAXSERV);
-
-    int result = getnameinfo(reinterpret_cast<sockaddr*>(&client), sizeof(client), host, NI_MAXHOST, svc, NI_MAXSERV, 0);
-    if (result) {
-        std::cout << host << " connected on " << svc << std::endl;
-    } else {
-        inet_ntop(AF_INET, &client.sin_addr, host, NI_MAXHOST);
-        std::cout << host << " connected on " << ntohs(client.sin_port) << std::endl;
-    }
-
-    // While receiving - display message
-    char buffer[4096];
-    
-    while(true) {
-        // Clear buffer
-        memset(buffer, 0, 4096);
-
-        // Wait for a message
-        int bytesRecv = recv(clientSocket, buffer, 4096, 0);
+        log.push_back(client_message);
         
-        if (bytesRecv == -1) {
-            std::cerr << "The client disconnected\n";
-            break;
-        }    
-
-        // Display the message
-        std::cout << "Received: " << buffer << std::endl;
-        
-        // echo to client
-        send(clientSocket, buffer, bytesRecv + 1, 0);    
+        log_mutex.unlock();
     }
 
-    // Close socket
-    close(clientSocket);
+    server::~server()
+    {
+        if (endpoint > 0)
+        {
+            close(endpoint);
+        }
+    }
 
+    void server::init(int argc, char *argv[])
+    {
 
-    return EXIT_SUCCESS;
-}
+        // Validation user input
+        if (argc != 1)
+        {
+            std::cerr << "User input is invalid\n"
+                      << "use format: ./server 3000 (3000 - number of port)\n";
+            return;
+        }
+
+        // Create an endpoint(socket) for communication
+        endpoint = socket(AF_INET, SOCK_STREAM, 0);
+        if (endpoint == -1)
+        {
+            std::cerr << "Can't create a socket\n";
+            return;
+        }
+
+        // To describe the socket for work with IP
+        // port = std::stoi(argv[1]);
+        port = std::stoi("3000");
+
+        sockaddr_in hint;
+        hint.sin_family = AF_INET;
+        hint.sin_port = htons(port);
+        inet_pton(AF_INET, "0.0.0.0", &hint.sin_addr);
+
+        // Bind the socket to IP address
+        if (bind(endpoint, reinterpret_cast<sockaddr *>(&hint), sizeof(hint)) == -1)
+        {
+            std::cerr << "Can't bind to IP/port\n";
+            return;
+        }
+
+        server_status = status_list::initialized;
+    }
+
+    void server::run()
+    {
+        if (server_status != status_list::initialized)
+        {
+            return;
+        }
+
+        std::cout << "Server runing. Current port: " << port << '\n';
+
+        // Mark the socket for listening in
+        if (listen(endpoint, SOMAXCONN) == -1)
+        {
+            std::cerr << "Can't listen\n";
+            return;
+        }
+
+        server_status = status_list::runnning;
+
+        std::thread th1(&server::accept_connection, this);
+        th1.detach();
+
+        while (true)
+        {
+            std::string command;
+            std::cout << "Enter \"exit\" to stop server: ";
+            std::cin >> command;
+            if (command == "exit")
+            {
+                break;
+            }
+        }
+
+        std::cout << "\nServer was stopped\n";
+    }
+
+} // tcp
