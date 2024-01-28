@@ -13,6 +13,20 @@
 
 namespace tcp
 {
+    void connection_context::set_status(int new_status)
+    {
+        mt.lock();
+        status = new_status;
+        mt.unlock();
+    }
+
+    void connection_context::get_status(int& current_status)
+    {
+        mt.lock();
+        current_status = status;
+        mt.unlock();
+    }
+
     void server::accept_connection()
     {
         // Accept a call
@@ -26,7 +40,6 @@ namespace tcp
             {
                 std::thread th(&server::concrete_connection, this, client_socket);
                 th.detach();
-                connection_count += 1;
             }
         }
     }
@@ -35,44 +48,34 @@ namespace tcp
     {
         // While receiving - display message
         char buffer[buffer_size];
-       
+
         while (true)
         {
             // Clear buffer
             memset(buffer, 0, buffer_size);
-       
-            // Wait for a message
-            ssize_t bytesRecv = recv(client_socket, buffer, 4096, 0);
 
-            if (bytesRecv == -1)
+            // Wait for a message
+            int bytes_recv = recv(client_socket, buffer, buffer_size, 0);
+
+            if (bytes_recv == -1 || bytes_recv == 0)
             {
-                std::cerr << "The client disconnected\n";
+                // std::cerr << "The client disconnected\n";
                 break;
             }
 
-            if (bytesRecv > 0)
-            {
-                // Display the message
-                std::cout << "Received: " << buffer << std::endl;
-
-                // Send echo to client
-                send(client_socket, buffer, bytesRecv + 1, 0);
-       
-                log_message(buffer);
-            }
+            save_message(buffer);
         }
-        connection_count -= 1;
     }
 
-    std::mutex log_mutex;
+    std::mutex save_message_mutex;
 
-    void server::log_message(const std::string& client_message)
+    void server::save_message(const std::string &client_message)
     {
-        log_mutex.lock();
+        save_message_mutex.lock();
 
-        log.push_back(client_message);
-        
-        log_mutex.unlock();
+        message_list.push_back(client_message);
+
+        save_message_mutex.unlock();
     }
 
     server::~server()
@@ -104,7 +107,7 @@ namespace tcp
 
         // To describe the socket for work with IP
         // port = std::stoi(argv[1]);
-        port = std::stoi("3000");
+        port = std::stoi("2000");
 
         sockaddr_in hint;
         hint.sin_family = AF_INET;
