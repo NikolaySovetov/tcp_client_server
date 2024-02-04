@@ -9,22 +9,44 @@
 #include <string>
 #include <list>
 #include <thread>
-#include <mutex>
 
 namespace tcp
 {
-    void connection_context::set_status(int new_status)
+    void server::add_connection(int client_socket)
     {
-        mt.lock();
-        status = new_status;
-        mt.unlock();
+        sockets_mutex.lock();
+
+        client_sockets.push_back(client_socket);
+
+        sockets_mutex.unlock();
     }
 
-    void connection_context::get_status(int& current_status)
+    void server::close_connection(int client_socket)
     {
-        mt.lock();
-        current_status = status;
-        mt.unlock();
+        sockets_mutex.lock();
+
+        if (client_socket)
+        {
+            close(client_socket);
+        }
+
+        sockets_mutex.unlock();
+    }
+
+    void server::close_all_connections()
+    {
+        sockets_mutex.lock();
+
+        for (const auto sock : client_sockets)
+        {
+            close(sock);
+/*             if (sock)
+            {
+                ;
+            }
+ */
+        }
+        sockets_mutex.unlock();
     }
 
     void server::accept_connection()
@@ -38,6 +60,8 @@ namespace tcp
 
             if (client_socket > 0)
             {
+                add_connection(client_socket);
+
                 std::thread th(&server::concrete_connection, this, client_socket);
                 th.detach();
             }
@@ -59,23 +83,14 @@ namespace tcp
 
             if (bytes_recv == -1 || bytes_recv == 0)
             {
-                // std::cerr << "The client disconnected\n";
                 break;
             }
-
-            save_message(buffer);
+            else
+            {
+                mlogger.save_request(buffer);
+            }
         }
-    }
-
-    std::mutex save_message_mutex;
-
-    void server::save_message(const std::string &client_message)
-    {
-        save_message_mutex.lock();
-
-        message_list.push_back(client_message);
-
-        save_message_mutex.unlock();
+        close_connection(client_socket);
     }
 
     server::~server()
@@ -121,12 +136,12 @@ namespace tcp
             return;
         }
 
-        server_status = status_list::initialized;
+        init_flag = true;
     }
 
     void server::run()
     {
-        if (server_status != status_list::initialized)
+        if (!init_flag)
         {
             return;
         }
@@ -140,7 +155,9 @@ namespace tcp
             return;
         }
 
-        server_status = status_list::runnning;
+        bool multithread_handler;
+        {
+        }
 
         std::thread th1(&server::accept_connection, this);
         th1.detach();
@@ -150,6 +167,7 @@ namespace tcp
             std::string command;
             std::cout << "Enter \"exit\" to stop server: ";
             std::cin >> command;
+
             if (command == "exit")
             {
                 break;
