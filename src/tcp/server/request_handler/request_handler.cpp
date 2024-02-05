@@ -2,24 +2,15 @@
 
 namespace tcp
 {
-    void message_logger::save_request(const char *client_message)
-    {
-        mt.lock();
-        
-        log.push_back(client_message);
-        
-        mt.unlock();
-    }
-
-    message_logger_file::message_logger_file() {
+    message_logger::message_logger() {
         file.open(file_name, std::ios::out); 
     }
 
-    message_logger_file::~message_logger_file() {
+    message_logger::~message_logger() {
         file.close(); 
     }
 
-    void message_logger_file::save_request(const char *client_message)
+    void message_logger::save_message(const char *client_message)
     {
         file_mutex.lock();
         
@@ -27,7 +18,5 @@ namespace tcp
         
         file_mutex.unlock();
     }
-
-
-
+    
 } // tcp

@@ -9,44 +9,37 @@
 #include <string>
 #include <list>
 #include <thread>
+#include <future>
+#include <mutex>
+#include <chrono>
 
 namespace tcp
 {
-    void server::add_connection(int client_socket)
+    std::mutex stop_mutex;
+    std::mutex count_mutex;
+
+    inline void server::add_connection()
     {
-        sockets_mutex.lock();
+        count_mutex.lock();
 
-        client_sockets.push_back(client_socket);
+        ++connection_count;
 
-        sockets_mutex.unlock();
+        count_mutex.unlock();
     }
 
-    void server::close_connection(int client_socket)
+    inline void server::delete_connection()
     {
-        sockets_mutex.lock();
+        count_mutex.lock();
 
-        if (client_socket)
-        {
-            close(client_socket);
-        }
+        --connection_count;
 
-        sockets_mutex.unlock();
+        count_mutex.unlock();
     }
 
-    void server::close_all_connections()
+    inline uint16_t server::get_connections()
     {
-        sockets_mutex.lock();
-
-        for (const auto sock : client_sockets)
-        {
-            close(sock);
-/*             if (sock)
-            {
-                ;
-            }
- */
-        }
-        sockets_mutex.unlock();
+        std::lock_guard<std::mutex> lg(count_mutex);
+        return connection_count;
     }
 
     void server::accept_connection()
@@ -60,37 +53,65 @@ namespace tcp
 
             if (client_socket > 0)
             {
-                add_connection(client_socket);
-
+                // Start new connection in new thread
                 std::thread th(&server::concrete_connection, this, client_socket);
                 th.detach();
+
+                // add connection to common count
+                add_connection();
             }
         }
     }
 
     void server::concrete_connection(int client_socket)
     {
-        // While receiving - display message
         char buffer[buffer_size];
+        int bytes_recv{};
+        bool close_connection_flag{false};
+        std::future<void> ft;
+        std::chrono::milliseconds span{250};
 
         while (true)
         {
             // Clear buffer
             memset(buffer, 0, buffer_size);
 
-            // Wait for a message
-            int bytes_recv = recv(client_socket, buffer, buffer_size, 0);
+            // Async wait for a message
+            ft = std::async([&]()
+                            { bytes_recv = recv(client_socket, buffer, buffer_size, 0); });
 
+            // Wait "recv"and checks whether "stop_flag" is active by "span" timeout
+            while (ft.wait_for(span) == std::future_status::timeout)
+            {
+                stop_mutex.lock();
+                if (stop_flag)
+                {
+                    close_connection_flag = true;
+                }
+                stop_mutex.unlock();
+
+                if (close_connection_flag)
+                    break;
+            }
+
+            // Checks a bytes count of the "recv" and handle client message
             if (bytes_recv == -1 || bytes_recv == 0)
             {
                 break;
             }
             else
             {
-                mlogger.save_request(buffer);
+                // Async start "mlogger" and waits it
+                ft = std::async([&]()
+                                { mlogger.save_message(buffer); });
+
+                // In this point CPU resources not used
+                ft.wait();
             }
         }
-        close_connection(client_socket);
+        close(client_socket);
+        delete_connection();
+        std::cout << ". " << std::flush;
     }
 
     server::~server()
@@ -170,11 +191,20 @@ namespace tcp
 
             if (command == "exit")
             {
+                stop_mutex.lock();
+                stop_flag = true;
+                stop_mutex.unlock();
+
+                // Waits until the connections count becomes 0  
+                while (get_connections())
+                {
+                    std::this_thread::sleep_for(std::chrono::milliseconds(250));
+                }
                 break;
             }
         }
 
-        std::cout << "\nServer was stopped\n";
+        std::cout << "\nThe server is stopped\n";
     }
 
 } // tcp

@@ -2,7 +2,6 @@
 #include <request_handler.hpp>
 #include <cstdint>
 #include <deque>
-#include <mutex>
 
 namespace tcp
 {
@@ -11,18 +10,18 @@ namespace tcp
     private:
         int endpoint{0};
         uint16_t port{0};
-        int buffer_size{4096};
+        uint16_t buffer_size{4096};
+        uint16_t connection_count{0};
 
     private:
-        message_logger_file mlogger;
-        std::mutex sockets_mutex;
-        std::deque<int> client_sockets;
+        message_logger mlogger;
         bool init_flag;
+        bool stop_flag;
 
     private:
-        void add_connection(int client_socket);
-        void close_connection(int client_socket);
-        void close_all_connections();
+        inline void add_connection();
+        inline void delete_connection();
+        inline uint16_t get_connections(); 
         void accept_connection();
         void concrete_connection(int client_socket);
 
