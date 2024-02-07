@@ -15,9 +15,6 @@
 
 namespace tcp
 {
-    std::mutex stop_mutex;
-    std::mutex count_mutex;
-
     inline void server::add_connection()
     {
         count_mutex.lock();
@@ -36,7 +33,7 @@ namespace tcp
         count_mutex.unlock();
     }
 
-    inline uint16_t server::get_connections()
+    inline uint16_t server::has_connections()
     {
         std::lock_guard<std::mutex> lg(count_mutex);
         return connection_count;
@@ -56,8 +53,6 @@ namespace tcp
                 // Start new connection in new thread
                 std::thread th(&server::concrete_connection, this, client_socket);
                 th.detach();
-
-                // add connection to common count
                 add_connection();
             }
         }
@@ -66,7 +61,7 @@ namespace tcp
     void server::concrete_connection(int client_socket)
     {
         char buffer[buffer_size];
-        int bytes_recv{};
+        int bytes_recv{0};
         bool close_connection_flag{false};
         std::future<void> ft;
         std::chrono::milliseconds span{250};
@@ -89,29 +84,30 @@ namespace tcp
                     close_connection_flag = true;
                 }
                 stop_mutex.unlock();
-
-                if (close_connection_flag)
-                    break;
             }
 
             // Checks a bytes count of the "recv" and handle client message
-            if (bytes_recv == -1 || bytes_recv == 0)
+            if (bytes_recv == -1 || bytes_recv == 0 || close_connection_flag)
             {
                 break;
             }
             else
             {
                 // Async start "mlogger" and waits it
-                ft = std::async([&]()
-                                { mlogger.save_message(buffer); });
+                // std::cout << buffer << '\n' << std::flush;
+    
+                mlogger.save_message(buffer);
+
+                //ft = std::async([&]()
+                //                { mlogger.save_message(buffer); });
 
                 // In this point CPU resources not used
-                ft.wait();
+                //ft.wait();
             }
         }
         close(client_socket);
-        delete_connection();
         std::cout << ". " << std::flush;
+        delete_connection();
     }
 
     server::~server()
@@ -143,7 +139,7 @@ namespace tcp
 
         // To describe the socket for work with IP
         // port = std::stoi(argv[1]);
-        port = std::stoi("2000");
+        port = std::stoi("2003");
 
         sockaddr_in hint;
         hint.sin_family = AF_INET;
@@ -176,10 +172,6 @@ namespace tcp
             return;
         }
 
-        bool multithread_handler;
-        {
-        }
-
         std::thread th1(&server::accept_connection, this);
         th1.detach();
 
@@ -195,15 +187,14 @@ namespace tcp
                 stop_flag = true;
                 stop_mutex.unlock();
 
-                // Waits until the connections count becomes 0  
-                while (get_connections())
+                // Waits until the connections count becomes 0
+                while (has_connections())
                 {
                     std::this_thread::sleep_for(std::chrono::milliseconds(250));
                 }
                 break;
             }
         }
-
         std::cout << "\nThe server is stopped\n";
     }
 
