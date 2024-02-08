@@ -7,10 +7,8 @@ add_subdirectory(src)
 
 add_executable(server server.cpp)
 target_link_libraries(server PRIVATE tcp_server)
-target_link_libraries(server PRIVATE message_logger)
 
 add_executable(client client.cpp)
 target_link_libraries(client PRIVATE tcp_client)
-target_link_libraries(client PRIVATE timestamp)
 
 
