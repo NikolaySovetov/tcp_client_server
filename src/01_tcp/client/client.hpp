@@ -1,4 +1,5 @@
 #pragma once
+#include <stddef.h>
 
 namespace tcp
 {
@@ -7,14 +8,11 @@ namespace tcp
     private:
         int sock{0};
         int port{0};
-        int buffer_size{4096};
-        int timeout{0};
+        size_t buffer_size{4096};
+        size_t timeout{0};
         const char *ip_address{"127.0.0.1"};
         char *name{};
-
-    private:
         bool init_flag;
-        bool stop_flag;
 
     public:
         client() = default;

@@ -29,12 +29,8 @@ namespace tcp
             return;
         }
 
-        for (int i {0}; i < argc; ++i) {
-            std::cout << '[' << i << "] " << argv[i] << '\n'; 
-        }
-
         // Create a socket
-        int sock = socket(AF_INET, SOCK_STREAM, 0);
+        sock = socket(AF_INET, SOCK_STREAM, 0);
         if (sock == -1)
         {
             std::cout << "Can't create a socket\n";
@@ -46,7 +42,6 @@ namespace tcp
         struct sockaddr_in hint;
         hint.sin_family = AF_INET;
         hint.sin_port = htons(std::stoi(argv[2]));
-        //hint.sin_port = htons(std::stoi("3000"));
         inet_pton(AF_INET, ip_address, &hint.sin_addr);
 
         // Connect to the server on the socket
@@ -60,7 +55,7 @@ namespace tcp
 
         name = argv[1];
         timeout = std::stoi(argv[3]);
-        timeout = 1;
+
         init_flag = true;
     }
 
@@ -85,17 +80,10 @@ namespace tcp
             user_input += "  ";
             user_input += std::to_string(timeout);
 
-            std::cout << user_input << '\n';
-
             ft = std::async(std::launch::async, [&]()
                             { send_res = send(sock, user_input.c_str(), sizeof(user_input) + 1, 0); });
 
             std::this_thread::sleep_for(std::chrono::milliseconds(timeout * 1000));
-
-            std::cout << "send_res = " << send_res << '\n';
-            std::cout << "name = " << name << '\n';
-            std::cout << "port = " << port << '\n';
-            std::cout << "timeout = " << timeout << '\n';
 
             if (send_res == -1 || send_res == 0)
             {
@@ -105,3 +93,5 @@ namespace tcp
     }
 
 } // tcp
+
+
