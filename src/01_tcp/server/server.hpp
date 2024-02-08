@@ -1,8 +1,7 @@
 #pragma once
-#include <request_handler.hpp>
+#include <message_logger.hpp>
 #include <cstdint>
 #include <mutex>
-//#include <deque>
 
 namespace tcp
 {
@@ -22,8 +21,8 @@ namespace tcp
         bool stop_flag;
 
     private:
-        inline void add_connection();
-        inline void delete_connection();
+        inline void increase_count_connection();
+        inline void decrease_count_connection();
         inline uint16_t has_connections(); 
         void accept_connection();
         void concrete_connection(int client_socket);

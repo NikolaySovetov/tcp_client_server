@@ -15,7 +15,7 @@
 
 namespace tcp
 {
-    inline void server::add_connection()
+    inline void server::increase_count_connection()
     {
         count_mutex.lock();
 
@@ -24,7 +24,7 @@ namespace tcp
         count_mutex.unlock();
     }
 
-    inline void server::delete_connection()
+    inline void server::decrease_count_connection()
     {
         count_mutex.lock();
 
@@ -53,7 +53,7 @@ namespace tcp
                 // Start new connection in new thread
                 std::thread th(&server::concrete_connection, this, client_socket);
                 th.detach();
-                add_connection();
+                increase_count_connection();
             }
         }
     }
@@ -93,21 +93,19 @@ namespace tcp
             }
             else
             {
-                // Async start "mlogger" and waits it
-                // std::cout << buffer << '\n' << std::flush;
-    
-                mlogger.save_message(buffer);
-
-                //ft = std::async([&]()
-                //                { mlogger.save_message(buffer); });
-
-                // In this point CPU resources not used
-                //ft.wait();
+                ft = std::async([&]()
+                                { mlogger.save_message(buffer); });
+                ft.wait();
             }
         }
         close(client_socket);
-        std::cout << ". " << std::flush;
-        delete_connection();
+
+        if (close_connection_flag)
+        {
+            std::cout << ". " << std::flush;
+        }
+
+        decrease_count_connection();
     }
 
     server::~server()
@@ -122,7 +120,7 @@ namespace tcp
     {
 
         // Validation user input
-        if (argc != 1)
+        if (argc != 2)
         {
             std::cerr << "User input is invalid\n"
                       << "use format: ./server 3000 (3000 - number of port)\n";
@@ -138,8 +136,8 @@ namespace tcp
         }
 
         // To describe the socket for work with IP
-        // port = std::stoi(argv[1]);
-        port = std::stoi("2003");
+        port = std::stoi(argv[1]);
+        //port = std::stoi("2003");
 
         sockaddr_in hint;
         hint.sin_family = AF_INET;
