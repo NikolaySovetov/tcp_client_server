@@ -7,7 +7,6 @@
 #include <arpa/inet.h>
 #include <string.h>
 #include <string>
-#include <list>
 #include <thread>
 #include <future>
 #include <mutex>
@@ -15,27 +14,18 @@
 
 namespace tcp
 {
-    inline void server::increase_count_connection()
+    namespace context
     {
-        count_mutex.lock();
-
-        ++connection_count;
-
-        count_mutex.unlock();
-    }
-
-    inline void server::decrease_count_connection()
-    {
-        count_mutex.lock();
-
-        --connection_count;
-
-        count_mutex.unlock();
+        namespace mutexes
+        {
+            std::mutex count_connections;
+            std::mutex stop_server;
+        }
     }
 
     inline uint16_t server::has_connections()
     {
-        std::lock_guard<std::mutex> lg(count_mutex);
+        std::lock_guard<std::mutex> lg(context::mutexes::stop_server);
         return connection_count;
     }
 
@@ -53,7 +43,10 @@ namespace tcp
                 // Start new connection in new thread
                 std::thread th(&server::concrete_connection, this, client_socket);
                 th.detach();
-                increase_count_connection();
+
+                context::mutexes::count_connections.lock();
+                ++connection_count;
+                context::mutexes::count_connections.unlock();
             }
         }
     }
@@ -78,12 +71,12 @@ namespace tcp
             // Wait "recv"and checks whether "stop_flag" is active by "span" timeout
             while (ft.wait_for(span) == std::future_status::timeout)
             {
-                stop_mutex.lock();
+                context::mutexes::stop_server.lock();
                 if (stop_flag)
                 {
                     close_connection_flag = true;
                 }
-                stop_mutex.unlock();
+                context::mutexes::stop_server.unlock();
             }
 
             // Checks a bytes count of the "recv" and handle client message
@@ -105,7 +98,13 @@ namespace tcp
             std::cout << ". " << std::flush;
         }
 
-        decrease_count_connection();
+        context::mutexes::count_connections.lock();
+        --connection_count;
+        context::mutexes::count_connections.unlock();
+    }
+
+    server::server(const char *file_name) : mlogger{file_name}
+    {
     }
 
     server::~server()
@@ -137,12 +136,11 @@ namespace tcp
 
         // To describe the socket for work with IP
         port = std::stoi(argv[1]);
-        //port = std::stoi("2003");
 
         sockaddr_in hint;
         hint.sin_family = AF_INET;
         hint.sin_port = htons(port);
-        inet_pton(AF_INET, "0.0.0.0", &hint.sin_addr);
+        inet_pton(AF_INET, connection_address, &hint.sin_addr);
 
         // Bind the socket to IP address
         if (bind(endpoint, reinterpret_cast<sockaddr *>(&hint), sizeof(hint)) == -1)
@@ -181,9 +179,9 @@ namespace tcp
 
             if (command == "exit")
             {
-                stop_mutex.lock();
+                context::mutexes::stop_server.lock();
                 stop_flag = true;
-                stop_mutex.unlock();
+                context::mutexes::stop_server.unlock();
 
                 // Waits until the connections count becomes 0
                 while (has_connections())

@@ -1,6 +1,6 @@
 #include "message_logger.hpp"
 
-message_logger::message_logger()
+message_logger::message_logger(const char* file_name)
 {
     file.open(file_name, std::ios::out /* | std::ios::app */);
 }
